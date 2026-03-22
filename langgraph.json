@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "app": "QuanLyPhongTro",
+  "runtime_module": "app.modules.agents.runtime",
+  "supervisor_graph": "app.modules.agents.graphs.supervisor",
+  "execution_modes": [
+    "read_only",
+    "propose_write",
+    "approved_write"
+  ],
+  "default_execution_mode": "read_only",
+  "checkpointer": {
+    "dev": {
+      "backend": "sqlite",
+      "sqlite_path": "./logs/agent_checkpoints.sqlite3"
+    },
+    "prod": {
+      "backend": "db",
+      "table": "agent_checkpoints"
+    }
+  },
+  "feature_flags": {
+    "enable_write_actions": false,
+    "require_approval_for_writes": true
+  }
+}

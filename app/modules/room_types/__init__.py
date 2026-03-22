@@ -1,0 +1,1 @@
+"""Room types module."""
