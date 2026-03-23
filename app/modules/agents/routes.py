@@ -146,6 +146,7 @@ async def stream_agent_run(
 
     async def event_generator():
         cursor = max(0, last_event_id)
+        last_streamed_partial = str(snapshot.partial_answer or "")
         yield _to_sse(
             event="snapshot",
             payload={
@@ -191,6 +192,22 @@ async def stream_agent_run(
                     event=item.event_type,
                     payload=item.payload,
                     event_id=item.id,
+                )
+
+            latest_partial = str(latest.partial_answer or "")
+            if latest_partial and latest_partial != last_streamed_partial:
+                if latest_partial.startswith(last_streamed_partial):
+                    delta_text = latest_partial[len(last_streamed_partial) :]
+                else:
+                    delta_text = latest_partial
+                last_streamed_partial = latest_partial
+                yield _to_sse(
+                    event="delta",
+                    payload={
+                        "delta": delta_text,
+                        "accumulated": latest_partial,
+                    },
+                    event_id=cursor,
                 )
 
             if latest.status in terminal_statuses:

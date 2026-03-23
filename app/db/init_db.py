@@ -150,11 +150,50 @@ def _ensure_leases_table_extensions() -> None:
         )
 
 
+def _ensure_assets_table_extensions() -> None:
+    with engine.begin() as conn:
+        inspector = inspect(conn)
+        if not inspector.has_table("assets"):
+            return
+
+        columns = {column["name"] for column in inspector.get_columns("assets")}
+        if "owner_scope" not in columns:
+            conn.execute(
+                text(
+                    """
+                    ALTER TABLE assets
+                    ADD COLUMN owner_scope VARCHAR(16) NOT NULL DEFAULT 'RENTER' AFTER renter_id
+                    """
+                )
+            )
+        else:
+            conn.execute(
+                text(
+                    """
+                    UPDATE assets
+                    SET owner_scope = 'RENTER'
+                    WHERE owner_scope IS NULL OR owner_scope = ''
+                    """
+                )
+            )
+
+        conn.execute(
+            text(
+                """
+                UPDATE assets
+                SET owner_scope = UPPER(owner_scope)
+                WHERE owner_scope IS NOT NULL
+                """
+            )
+        )
+
+
 def init_db() -> None:
     # Always load mapped classes so SQLAlchemy metadata is ready.
     import_all_models()
     _ensure_permissions_table_extensions()
     _ensure_leases_table_extensions()
+    _ensure_assets_table_extensions()
     # Use Alembic as the primary schema management tool.
     # Auto create-all can fail on partially broken MySQL tables (e.g. "doesn't exist in engine").
     if settings.DB_AUTO_CREATE_TABLES_ON_STARTUP:

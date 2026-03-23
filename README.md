@@ -53,6 +53,8 @@ uv run uvicorn main:app --reload --port 8000
   - `OLLAMA_HOST=http://127.0.0.1:11434` (hoặc endpoint cloud của bạn)
   - `OLLAMA_API_KEY=` (nếu endpoint yêu cầu token)
   - `OLLAMA_MODEL_FALLBACKS=` (danh sách model fallback, phân tách bằng dấu phẩy)
+  - `AGENT_RUN_EVENTS_RETENTION_DAYS=30` (xóa event stream cũ hơn N ngày, đặt `0` để tắt)
+  - `AGENT_RUN_EVENTS_RETENTION_INTERVAL_MINUTES=30` (chu kỳ dọn dữ liệu)
 
 Sau khi pull code mới, chạy migration:
 
@@ -67,4 +69,12 @@ Ví dụ request:
   "message": "Cho tôi KPI vận hành hiện tại",
   "locale": "vi-VN"
 }
+```
+
+## Dọn dữ liệu agent_run_events cũ
+
+Nếu bảng `agent_run_events` đã phình lớn vì các bản ghi `delta` cũ, chạy script:
+
+```sql
+source scripts/sql/cleanup_agent_run_events.sql;
 ```

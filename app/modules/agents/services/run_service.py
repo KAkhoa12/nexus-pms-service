@@ -5,6 +5,7 @@ import threading
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from time import monotonic
 from types import SimpleNamespace
 from uuid import uuid4
 
@@ -72,7 +73,7 @@ def _append_event(
     return row
 
 
-def _persist_stream_delta(*, run_pk_id: int, delta: str, accumulated: str) -> bool:
+def _persist_stream_delta(*, run_pk_id: int, accumulated: str) -> bool:
     stream_db = SessionLocal()
     try:
         row = stream_db.get(AgentRun, run_pk_id)
@@ -84,12 +85,6 @@ def _persist_stream_delta(*, run_pk_id: int, delta: str, accumulated: str) -> bo
             return False
         row.partial_answer = accumulated
         row.updated_at = _utcnow()
-        _append_event(
-            stream_db,
-            run_pk_id=run_pk_id,
-            event_type="delta",
-            payload={"delta": delta, "accumulated": accumulated},
-        )
         stream_db.commit()
         return True
     except Exception:
@@ -212,23 +207,46 @@ def _execute_run_worker(run_id: str) -> None:
         )
         runtime = AgentRuntime(db)
         streamed_chunks: list[str] = []
+        last_flushed_length = 0
+        last_flush_at = monotonic()
 
         def on_answer_delta(delta_text: str) -> bool:
+            nonlocal last_flushed_length, last_flush_at
             if not delta_text:
                 return True
             streamed_chunks.append(delta_text)
             accumulated = "".join(streamed_chunks)
-            return _persist_stream_delta(
+            now = monotonic()
+            should_flush = (
+                len(accumulated) - last_flushed_length >= 120
+                or (now - last_flush_at) >= 0.45
+                or delta_text.endswith(("\n", ".", "!", "?"))
+            )
+            if not should_flush:
+                return True
+            persisted = _persist_stream_delta(
                 run_pk_id=int(row.id),
-                delta=delta_text,
                 accumulated=accumulated,
             )
+            if persisted:
+                last_flushed_length = len(accumulated)
+                last_flush_at = now
+            return persisted
 
         result = runtime.run_query(
             payload=payload,
             current_user=_build_worker_user(row),
             on_answer_delta=on_answer_delta,
         )
+
+        if streamed_chunks:
+            accumulated = "".join(streamed_chunks)
+            if len(accumulated) > last_flushed_length:
+                _persist_stream_delta(
+                    run_pk_id=int(row.id),
+                    accumulated=accumulated,
+                )
+
         db.refresh(row)
 
         if row.cancel_requested:

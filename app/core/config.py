@@ -46,6 +46,8 @@ class Settings(BaseSettings):
     AGENT_CHECKPOINTER_SQLITE_PATH: str = "./logs/agent_checkpoints.sqlite3"
     AGENT_TOKEN_BUDGET: int = 4000
     AGENT_COST_BUDGET_USD: float = 0.2
+    AGENT_RUN_EVENTS_RETENTION_DAYS: int = 30
+    AGENT_RUN_EVENTS_RETENTION_INTERVAL_MINUTES: int = 30
     OLLAMA_HOST: str = "http://127.0.0.1:11434"
     OLLAMA_API_KEY: str = ""
     OLLAMA_MODEL_FALLBACKS: str = ""
