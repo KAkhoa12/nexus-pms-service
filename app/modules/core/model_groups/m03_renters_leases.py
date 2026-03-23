@@ -158,7 +158,7 @@ class Lease(TimestampSoftDeleteMixin, Base):
     renter: Mapped["Renter"] = relationship(back_populates="leases")
     created_by_user: Mapped[Optional["User"]] = relationship()
     deposits: Mapped[List["Deposit"]] = relationship(back_populates="lease")
-    invoices: Mapped[List["Invoice"]] = relationship()
+    invoices: Mapped[List["Invoice"]] = relationship(back_populates="lease")
     handover_sessions: Mapped[List["RoomHandoverSession"]] = relationship(
         back_populates="lease"
     )

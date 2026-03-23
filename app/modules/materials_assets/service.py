@@ -39,6 +39,9 @@ from app.utils.naming import random_name_with_timestamp
 MAX_ITEMS_PER_PAGE = 500
 MATERIAL_ASSET_UPLOAD_MAX_BYTES = 10 * 1024 * 1024
 MATERIAL_ASSET_OBJECT_PREFIX = "materials-assets"
+OWNER_SCOPE_ROOM = "ROOM"
+OWNER_SCOPE_RENTER = "RENTER"
+VALID_OWNER_SCOPES = {OWNER_SCOPE_ROOM, OWNER_SCOPE_RENTER}
 
 
 def _normalize_upload_suffix(file_name: str, content_type: str | None) -> str:
@@ -171,6 +174,7 @@ def _to_asset_out(item: Asset) -> MaterialAssetOut:
         tenant_id=item.tenant_id,
         room_id=item.room_id,
         renter_id=item.renter_id,
+        owner_scope=(item.owner_scope or OWNER_SCOPE_RENTER).upper(),
         asset_type_id=item.asset_type_id,
         name=item.name,
         identifier=item.identifier,
@@ -190,6 +194,16 @@ def _to_asset_out(item: Asset) -> MaterialAssetOut:
         renter_full_name=item.renter.full_name if item.renter else None,
         images=[_to_image_out(image) for image in ordered_images],
     )
+
+
+def _normalize_owner_scope(raw: str | None) -> str:
+    normalized = (raw or OWNER_SCOPE_RENTER).strip().upper()
+    if normalized not in VALID_OWNER_SCOPES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"owner_scope phải là {OWNER_SCOPE_ROOM} hoặc {OWNER_SCOPE_RENTER}",
+        )
+    return normalized
 
 
 def _normalize_image_urls(image_urls: list[str] | None) -> list[str]:
@@ -258,6 +272,44 @@ def _resolve_room_id_for_asset(
         detail=(
             "Không xác định được phòng của khách thuê. "
             "Vui lòng tạo hợp đồng thuê trước khi thêm tài sản."
+        ),
+    )
+
+
+def _resolve_renter_id_for_room_asset(
+    db: Session,
+    *,
+    tenant_id: int,
+    room_id: int,
+) -> int:
+    active_renter_id = db.scalar(
+        select(Lease.renter_id).where(
+            Lease.tenant_id == tenant_id,
+            Lease.room_id == room_id,
+            Lease.deleted_at.is_(None),
+            Lease.status == LeaseStatusEnum.ACTIVE,
+        )
+    )
+    if active_renter_id is not None:
+        return int(active_renter_id)
+
+    latest_renter_id = db.scalar(
+        select(Lease.renter_id)
+        .where(
+            Lease.tenant_id == tenant_id,
+            Lease.room_id == room_id,
+            Lease.deleted_at.is_(None),
+        )
+        .order_by(Lease.start_date.desc(), Lease.id.desc())
+    )
+    if latest_renter_id is not None:
+        return int(latest_renter_id)
+
+    raise HTTPException(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        detail=(
+            "Phòng này chưa có khách thuê để liên kết tài sản. "
+            "Vui lòng tạo hợp đồng thuê hoặc truyền renter_id."
         ),
     )
 
@@ -479,6 +531,7 @@ def list_material_assets(
     search_key: str | None,
     room_id: int | None,
     renter_id: int | None,
+    owner_scope: str | None,
     asset_type_id: int | None,
 ) -> tuple[list[MaterialAssetOut], int]:
     if page < 1:
@@ -505,6 +558,8 @@ def list_material_assets(
         stmt = stmt.where(Asset.room_id == room_id)
     if renter_id is not None:
         stmt = stmt.where(Asset.renter_id == renter_id)
+    if owner_scope is not None and owner_scope.strip():
+        stmt = stmt.where(Asset.owner_scope == _normalize_owner_scope(owner_scope))
     if asset_type_id is not None:
         stmt = stmt.where(Asset.asset_type_id == asset_type_id)
 
@@ -512,7 +567,7 @@ def list_material_assets(
         keyword = f"%{search_key.strip()}%"
         stmt = (
             stmt.join(Room, Asset.room_id == Room.id)
-            .join(Renter, Asset.renter_id == Renter.id)
+            .outerjoin(Renter, Asset.renter_id == Renter.id)
             .join(AssetType, Asset.asset_type_id == AssetType.id)
             .where(
                 or_(
@@ -542,19 +597,48 @@ def list_material_assets(
 def create_material_asset(
     db: Session, *, tenant_id: int, payload: MaterialAssetCreateRequest
 ) -> MaterialAssetOut:
-    _ensure_renter(db, tenant_id=tenant_id, renter_id=payload.renter_id)
+    owner_scope = _normalize_owner_scope(payload.owner_scope)
     _ensure_asset_type(db, tenant_id=tenant_id, asset_type_id=payload.asset_type_id)
-    resolved_room_id = _resolve_room_id_for_asset(
-        db,
-        tenant_id=tenant_id,
-        renter_id=payload.renter_id,
-        room_id=payload.room_id,
-    )
+
+    resolved_renter_id: int
+    resolved_room_id: int
+    if owner_scope == OWNER_SCOPE_ROOM:
+        if payload.room_id is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Tài sản phòng bắt buộc phải có room_id",
+            )
+        _ensure_room(db, tenant_id=tenant_id, room_id=payload.room_id)
+        resolved_room_id = int(payload.room_id)
+        if payload.renter_id is not None:
+            _ensure_renter(db, tenant_id=tenant_id, renter_id=payload.renter_id)
+            resolved_renter_id = int(payload.renter_id)
+        else:
+            resolved_renter_id = _resolve_renter_id_for_room_asset(
+                db,
+                tenant_id=tenant_id,
+                room_id=resolved_room_id,
+            )
+    else:
+        if payload.renter_id is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Tài sản khách thuê bắt buộc phải có renter_id",
+            )
+        _ensure_renter(db, tenant_id=tenant_id, renter_id=payload.renter_id)
+        resolved_renter_id = int(payload.renter_id)
+        resolved_room_id = _resolve_room_id_for_asset(
+            db,
+            tenant_id=tenant_id,
+            renter_id=resolved_renter_id,
+            room_id=payload.room_id,
+        )
 
     item = Asset(
         tenant_id=tenant_id,
         room_id=resolved_room_id,
-        renter_id=payload.renter_id,
+        renter_id=resolved_renter_id,
+        owner_scope=owner_scope,
         asset_type_id=payload.asset_type_id,
         name=payload.name.strip(),
         identifier=(payload.identifier or "").strip() or None,
@@ -622,6 +706,18 @@ def update_material_asset(
                 renter_id=payload.renter_id,
                 room_id=None,
             )
+    if payload.owner_scope is not None:
+        item.owner_scope = _normalize_owner_scope(payload.owner_scope)
+    if (
+        item.owner_scope == OWNER_SCOPE_ROOM
+        and payload.room_id is not None
+        and payload.renter_id is None
+    ):
+        item.renter_id = _resolve_renter_id_for_room_asset(
+            db,
+            tenant_id=tenant_id,
+            room_id=item.room_id,
+        )
     if payload.room_id is not None:
         item.room_id = _resolve_room_id_for_asset(
             db,

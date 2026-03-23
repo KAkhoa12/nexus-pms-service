@@ -144,6 +144,15 @@ def _add_months_preserve_day(value: datetime, months: int) -> datetime:
     return value.replace(year=year, month=month, day=day)
 
 
+def _build_due_dates(start_date: datetime, total_installments: int) -> list[datetime]:
+    if total_installments <= 0:
+        return []
+    return [
+        _add_months_preserve_day(start_date, month_offset)
+        for month_offset in range(1, total_installments + 1)
+    ]
+
+
 def _service_fee_applies_for_installment(fee: ServiceFee, installment_no: int) -> bool:
     cycle = (fee.billing_cycle or "MONTHLY").upper()
     if cycle == "ONE_TIME":
@@ -166,10 +175,9 @@ def _generate_invoices_for_lease(
     if total_installments <= 0:
         return
 
-    due_dates = [
-        _add_months_preserve_day(lease.start_date, month_offset)
-        for month_offset in range(total_installments)
-    ]
+    # Kỳ thanh toán bắt đầu từ tháng kế tiếp ngày bàn giao/bắt đầu hợp đồng.
+    # Ví dụ: start_date 20/03 => kỳ 1 due_date 20/04.
+    due_dates = _build_due_dates(lease.start_date, total_installments)
     period_months = [due_date.strftime("%Y-%m") for due_date in due_dates]
     existing_periods = set(
         db.scalars(

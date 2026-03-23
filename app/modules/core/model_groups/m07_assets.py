@@ -51,6 +51,12 @@ class Asset(TimestampSoftDeleteMixin, Base):
     renter_id: Mapped[int] = mapped_column(
         ForeignKey("renters.id", ondelete="CASCADE"), index=True, nullable=False
     )
+    owner_scope: Mapped[str] = mapped_column(
+        String(16),
+        nullable=False,
+        default="RENTER",
+        server_default="RENTER",
+    )
     asset_type_id: Mapped[int] = mapped_column(
         ForeignKey("asset_types.id", ondelete="RESTRICT"), index=True, nullable=False
     )

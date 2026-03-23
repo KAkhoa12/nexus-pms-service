@@ -40,7 +40,8 @@ class MaterialAssetImageOut(BaseModel):
 
 class MaterialAssetBase(BaseModel):
     room_id: int | None = Field(default=None, ge=1)
-    renter_id: int = Field(ge=1)
+    renter_id: int | None = Field(default=None, ge=1)
+    owner_scope: str = Field(default="RENTER", max_length=16)
     asset_type_id: int = Field(ge=1)
     name: str = Field(min_length=1, max_length=255)
     identifier: str | None = Field(default=None, max_length=64)
@@ -62,6 +63,7 @@ class MaterialAssetCreateRequest(MaterialAssetBase):
 class MaterialAssetUpdateRequest(BaseModel):
     room_id: int | None = Field(default=None, ge=1)
     renter_id: int | None = Field(default=None, ge=1)
+    owner_scope: str | None = Field(default=None, max_length=16)
     asset_type_id: int | None = Field(default=None, ge=1)
     name: str | None = Field(default=None, min_length=1, max_length=255)
     identifier: str | None = Field(default=None, max_length=64)
@@ -80,7 +82,8 @@ class MaterialAssetOut(BaseModel):
     id: int
     tenant_id: int
     room_id: int
-    renter_id: int
+    renter_id: int | None
+    owner_scope: str
     asset_type_id: int
     name: str
     identifier: str | None

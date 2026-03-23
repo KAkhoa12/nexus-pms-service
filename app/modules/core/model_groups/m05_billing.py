@@ -145,7 +145,7 @@ class Invoice(TimestampSoftDeleteMixin, Base):
     branch: Mapped["Branch"] = relationship(back_populates="invoices")
     room: Mapped["Room"] = relationship(back_populates="invoices")
     renter: Mapped["Renter"] = relationship()
-    lease: Mapped[Optional["Lease"]] = relationship()
+    lease: Mapped[Optional["Lease"]] = relationship(back_populates="invoices")
     items: Mapped[List["InvoiceItem"]] = relationship(back_populates="invoice")
     penalties: Mapped[List["InvoicePenalty"]] = relationship(back_populates="invoice")
     payments: Mapped[List["Payment"]] = relationship(back_populates="invoice")

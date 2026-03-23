@@ -127,6 +127,7 @@ def get_material_assets(
     search_key: str | None = Query(default=None),
     room_id: int | None = Query(default=None, ge=1),
     renter_id: int | None = Query(default=None, ge=1),
+    owner_scope: str | None = Query(default=None),
     asset_type_id: int | None = Query(default=None, ge=1),
     db: Session = Depends(get_db),
     current_user=Depends(get_current_user),
@@ -140,6 +141,7 @@ def get_material_assets(
         search_key=search_key,
         room_id=room_id,
         renter_id=renter_id,
+        owner_scope=owner_scope,
         asset_type_id=asset_type_id,
     )
     result = build_paginated_result(
